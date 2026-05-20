@@ -1,0 +1,6 @@
+body { font-family: 'Segoe UI', sans-serif; background: #f4f7f6; margin: 0; padding: 20px; }
+.card { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+button { border: none; padding: 12px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; color: white; transition: 0.3s; }
+button:hover { filter: brightness(1.1); }
+.btn-back { background: #6c757d; }
+.btn-main { background: #4a90e2; }

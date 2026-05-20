@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Архив</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; padding: 20px; background: #f0f4f8; }
+        .card { background: white; padding: 15px; margin-bottom: 10px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        button { padding: 8px 12px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; margin-left: 5px; }
+        .btn-restore { background: #27ae60; color: white; }
+        .btn-delete { background: #ff4d4d; color: white; }
+    </style>
+</head>
+<body>
+
+    <button onclick="window.location.href='attendance.html'">← Назад в табель</button>
+    <h2>Архив детей</h2>
+    <div id="archive-list"></div>
+
+    <script>
+        // Проверка авторизации внутри скрипта
+        const user = JSON.parse(localStorage.getItem('currentUser'));
+        if (!user) {
+            window.location.href = 'login.html';
+        }
+
+        function loadArchive() {
+            let list = JSON.parse(localStorage.getItem('ch_' + user.group)) || [];
+            let container = document.getElementById('archive-list');
+            
+            let archived = list.filter(c => c.active === false);
+            
+            if (archived.length === 0) {
+                container.innerHTML = "<p>Архив пуст.</p>";
+                return;
+            }
+
+            container.innerHTML = archived.map(c => `
+                <div class="card">
+                    <span>${c.name}</span>
+                    <div>
+                        <button class="btn-restore" onclick="restore('${c.id}')">Вернуть</button>
+                        <button class="btn-delete" onclick="deleteForever('${c.id}')">✕ Удалить навсегда</button>
+                    </div>
+                </div>`).join('');
+        }
+
+        function restore(id) {
+            let list = JSON.parse(localStorage.getItem('ch_' + user.group));
+            let child = list.find(c => c.id == id);
+            if (child) {
+                child.active = true;
+                localStorage.setItem('ch_' + user.group, JSON.stringify(list));
+                loadArchive();
+            }
+        }
+
+        function deleteForever(id) {
+            if (!confirm('Удалить ребенка из системы навсегда?')) return;
+            let list = JSON.parse(localStorage.getItem('ch_' + user.group));
+            list = list.filter(c => c.id != id);
+            localStorage.setItem('ch_' + user.group, JSON.stringify(list));
+            loadArchive();
+        }
+
+        loadArchive();
+    </script>
+</body>
+</html>

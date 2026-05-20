@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Вход в систему</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #f4f7f6; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .card { background: white; padding: 40px; border-radius: 20px; box-shadow: 0 15px 35px rgba(0,0,0,0.1); width: 320px; text-align: center; animation: fadeIn 0.6s; }
+        input { width: 100%; padding: 12px; margin-bottom: 20px; border: 2px solid #eee; border-radius: 10px; outline: none; transition: 0.3s; box-sizing: border-box; font-size: 15px; }
+        input:focus { border-color: #4a90e2; }
+        button { width: 100%; padding: 12px; background: #4a90e2; color: white; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; transition: 0.3s; font-size: 16px; }
+        button:hover { transform: translateY(-3px); box-shadow: 0 5px 15px rgba(74,144,226,0.3); }
+        .error-msg { color: #cc0000; font-size: 13px; margin-top: -10px; margin-bottom: 15px; display: none; text-align: left; padding-left: 5px; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2 style="color:#333; margin-bottom: 25px;">Вход в систему</h2>
+        
+        <input type="text" id="log-user" placeholder="Номер группы или admin">
+        
+        <input type="password" id="log-password" placeholder="Введите пароль">
+        
+        <div id="error-block" class="error-msg"></div>
+        
+        <button onclick="login()">Войти</button>
+    </div>
+
+    <script>
+        // Конфигурация паролей доступа
+        const PASSWORDS = {
+            admin: "admin123",       // Пароль для администратора
+            teacher: "1234"          // Единый пароль для всех воспитателей
+        };
+
+        function login() {
+            const userRole = document.getElementById('log-user').value.trim();
+            const userPassword = document.getElementById('log-password').value;
+            const errorBlock = document.getElementById('error-block');
+            
+            // Сброс прошлой ошибки
+            errorBlock.style.display = "none";
+            errorBlock.innerText = "";
+
+            // Проверка на заполненность полей
+            if (!userRole || !userPassword) {
+                showError("Заполните все поля для входа!");
+                return;
+            }
+
+            // Проверка пароля в зависимости от роли
+            if (userRole.toLowerCase() === 'admin') {
+                // Если пытается зайти администратор
+                if (userPassword !== PASSWORDS.admin) {
+                    showError("Неверный пароль администратора!");
+                    return;
+                }
+            } else {
+                // Если заходит воспитатель любой группы
+                if (userPassword !== PASSWORDS.teacher) {
+                    showError("Неверный пароль воспитателя!");
+                    return;
+                }
+            }
+
+            // Если проверки пройдены — сохраняем пользователя в сессию
+            localStorage.setItem('currentUser', JSON.stringify({ group: userRole }));
+            
+            // Инициализация базового списка групп, если его ещё нет в браузере
+            if (!localStorage.getItem('my_groups')) {
+                localStorage.setItem('my_groups', JSON.stringify(['1', '2', '8', '9', '10']));
+            }
+
+            // Переход в главное меню
+            window.location.href = 'index.html';
+        }
+
+        // Функция красивого вывода ошибок на экран карточки
+        function showError(message) {
+            const errorBlock = document.getElementById('error-block');
+            errorBlock.innerText = message;
+            errorBlock.style.display = "block";
+        }
+
+        // Добавляем обработку нажатия клавиши Enter для удобства
+        document.getElementById('log-password').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                login();
+            }
+        });
+        document.getElementById('log-user').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                document.getElementById('log-password').focus();
+            }
+        });
+    </script>
+</body>
+</html>
