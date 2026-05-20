@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Ввод данных ребенка</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; display: flex; justify-content: center; padding-top: 50px; }
+        .form-card { background: white; padding: 30px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 400px; }
+        h2 { color: #333; margin-top: 0; }
+        .field { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; font-weight: 600; color: #555; }
+        input, select { width: 100%; padding: 12px; border: 2px solid #e1e1e1; border-radius: 8px; box-sizing: border-box; transition: 0.3s; }
+        input:focus, select:focus { border-color: #4a90e2; outline: none; }
+        .btn-save { width: 100%; padding: 14px; background: #28a745; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: 0.3s; margin-top: 10px; }
+        .btn-save:hover { background: #218838; transform: translateY(-2px); }
+        .btn-back { background: #6c757d; margin-bottom: 20px; text-decoration: none; display: inline-block; padding: 10px 15px; color: white; border-radius: 8px; }
+    </style>
+</head>
+<body>
+
+    <div class="form-card">
+        <a href="index.html" class="btn-back">← Назад в меню</a>
+        <h2>Добавление ребенка</h2>
+        <div class="field">
+            <label>ФИО ребенка</label>
+            <input type="text" id="full-name" placeholder="Иванов Иван Иванович">
+        </div>
+        <div class="field">
+            <label>Дата рождения</label>
+            <input type="date" id="birth-date">
+        </div>
+        <div class="field">
+            <label>Номер группы</label>
+            <select id="group-select"></select>
+        </div>
+        <button class="btn-save" onclick="saveData()">Сохранить данные</button>
+    </div>
+
+    <script>
+        const user = JSON.parse(localStorage.getItem('currentUser'));
+        if (!user) window.location.href = 'login.html';
+
+        function initGroups() {
+            let groups = JSON.parse(localStorage.getItem('my_groups')) || ['8', '9', '10'];
+            let select = document.getElementById('group-select');
+            
+            if (user.group === 'admin') {
+                select.innerHTML = groups.map(g => `<option value="${g}">Группа ${g}</option>`).join('');
+            } else {
+                select.innerHTML = `<option value="${user.group}">Группа ${user.group}</option>`;
+                select.disabled = true;
+            }
+        }
+
+        function saveData() {
+            const name = document.getElementById('full-name').value.trim();
+            const birthDate = document.getElementById('birth-date').value;
+            const group = document.getElementById('group-select').value;
+            
+            if(!name) { alert("Введите ФИО!"); return; }
+            
+            let list = JSON.parse(localStorage.getItem('ch_' + group)) || [];
+            
+            // Сохраняем все данные, включая дату рождения
+            list.push({
+                id: Date.now().toString(), 
+                name: name, 
+                dob: birthDate,
+                active: true
+            });
+            
+            localStorage.setItem('ch_' + group, JSON.stringify(list));
+            
+            alert("Ребенок добавлен в группу " + group);
+            document.getElementById('full-name').value = '';
+            document.getElementById('birth-date').value = '';
+        }
+
+        initGroups();
+    </script>
+</body>
+</html>

@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Панель Администратора - Все дети</title>
+    <script src="xlsx.full.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #f4f7f6; padding: 20px; }
+        .controls { margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+        
+        .search-container { width: 100%; margin-bottom: 15px; }
+        .search-input { 
+            width: 100%; padding: 12px 15px; border: 2px solid #e0e0e0; 
+            border-radius: 8px; font-size: 15px; box-sizing: border-box; outline: none;
+        }
+        .search-input:focus { border-color: #4a90e2; }
+
+        /* Стиль панели массовых операций */
+        .bulk-actions-panel {
+            display: none;
+            background: #fff3cd;
+            border: 1px solid #ffeeba;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+            animation: fadeIn 0.3s;
+        }
+        .bulk-actions-panel span { font-weight: bold; color: #856404; }
+
+        table { width: 100%; border-collapse: collapse; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #eee; vertical-align: middle; }
+        th { background: #4a90e2; color: white; cursor: pointer; user-select: none; }
+        th:hover { background: #357abd; }
+        th.no-sort:hover { background: #4a90e2; cursor: default; }
+
+        .clickable { cursor: pointer; color: #4a90e2; font-weight: 600; text-decoration: underline; }
+        button { padding: 10px 15px; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; color: white; transition: 0.2s; }
+        button:hover { filter: brightness(0.9); }
+        
+        .back-btn { background: #6c757d; }
+        .btn-excel { background: #27ae60; }
+        .btn-import { background: #4a90e2; }
+        
+        .action-select {
+            padding: 6px 10px; font-size: 13px; border-radius: 6px; border: 1px solid #ccc;
+            background-color: #fff; font-weight: 600; cursor: pointer; outline: none; width: 140px;
+        }
+
+        .status-badge { padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; }
+        .status-active { background: #e5f7ed; color: #27ae60; }
+        .status-archived { background: #fdf2e9; color: #e67e22; }
+        
+        /* Модальные окна */
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 100; }
+        .modal-content { background: white; padding: 25px; border-radius: 12px; width: 340px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+        .modal-content input, .modal-content select { padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }
+        .date-range-block { display: none; flex-direction: column; gap: 8px; background: #f8f9fa; padding: 10px; border-radius: 6px; border: 1px solid #e0e0e0; }
+
+        /* Специфичные стили для чекбоксов опций */
+        .option-label { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; user-select: none; margin-top: 2px; }
+        .option-label input { transform: scale(1.1); cursor: pointer; }
+
+        .checkbox-cell { text-align: center; width: 40px; }
+        .checkbox-cell input { transform: scale(1.2); cursor: pointer; }
+
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    </style>
+</head>
+<body>
+
+    <h2>Панель Администратора: Управление всеми детьми</h2>
+    
+    <div class="controls">
+        <button class="back-btn" onclick="window.location.href='index.html'">← Назад в меню</button>
+        <button class="btn-excel" onclick="openExcelModal()">Скачать (Excel)...</button>
+        <input type="file" id="import-file" accept=".xlsx, .xls, .csv" style="display:none" onchange="importAllData(this)">
+        <button class="btn-import" onclick="document.getElementById('import-file').click()">Загрузить (Массово)</button>
+    </div>
+
+    <div id="bulk-panel" class="bulk-actions-panel">
+        <span>Выбрано детей: <span id="bulk-count">0</span></span>
+        
+        <button style="background: #f39c12; padding: 8px 12px;" onclick="openBulkMoveModal()">Перенести группу...</button>
+        <button style="background: #e67e22; padding: 8px 12px;" onclick="bulkToggleStatus(false)">Отчислить выбранных</button>
+        <button style="background: #27ae60; padding: 8px 12px;" onclick="bulkToggleStatus(true)">Восстановить выбранных</button>
+        <button style="background: #c0392b; padding: 8px 12px;" onclick="bulkDelete()">Удалить выбранных</button>
+    </div>
+
+    <div class="search-container">
+        <input type="text" id="search-input" class="search-input" onkeyup="filterTable()" placeholder="Поиск по ФИО, группе, родителю, телефону...">
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th class="no-sort checkbox-cell"><input type="checkbox" id="main-checkbox" onclick="toggleAllCheckboxes(this)"></th>
+                <th onclick="sortTable('name')">ФИО ребенка<span id="sort-name"></span></th>
+                <th onclick="sortTable('dob')">Дата рождения<span id="sort-dob"></span></th>
+                <th onclick="sortTable('displayGroup')">Группа зачисления<span id="sort-displayGroup"></span></th>
+                <th onclick="sortTable('parentName')">ФИО родителя<span id="sort-parentName"></span></th>
+                <th onclick="sortTable('phone')">Телефон<span id="sort-phone"></span></th>
+                <th onclick="sortTable('active')">Статус<span id="sort-active"></span></th>
+                <th class="no-sort">Действия</th>
+            </tr>
+        </thead>
+        <tbody id="table-body"></tbody>
+    </table>
+
+    <div id="excel-modal" class="modal">
+        <div class="modal-content" style="width: 360px;">
+            <h3>Настройка выгрузки Excel</h3>
+            
+            <label style="font-size: 13px; font-weight: bold; color: #2c3e50;">1. Выберите группу для выгрузки:</label>
+            <select id="excel-group-select">
+                <option value="all">Все группы реестра</option>
+            </select>
+
+            <label style="font-size: 13px; font-weight: bold; color: #2c3e50; margin-top: 5px;">2. Логика фильтрации групп:</label>
+            <select id="excel-logic-select">
+                <option value="enrollment">По Группе зачисления (Оригинал)</option>
+                <option value="actual">По Фактическому нахождению (Временно)</option>
+            </select>
+
+            <label style="font-size: 13px; font-weight: bold; color: #2c3e50; margin-top: 5px;">3. Включить в отчет данные:</label>
+            <label class="option-label">
+                <input type="checkbox" id="excel-col-dob" checked> Дата рождения ребенка
+            </label>
+            <label class="option-label">
+                <input type="checkbox" id="excel-col-parent" checked> ФИО родителя
+            </label>
+            <label class="option-label">
+                <input type="checkbox" id="excel-col-phone" checked> Номер телефона
+            </label>
+
+            <button onclick="executeExcelDownload()" style="background:#27ae60; margin-top:15px; font-size: 15px;">Сформировать и скачать</button>
+            <button onclick="document.getElementById('excel-modal').style.display='none'" style="background:#6c757d;">Отмена</button>
+        </div>
+    </div>
+
+    <div id="modal" class="modal">
+        <div class="modal-content">
+            <h3>Редактировать карточку</h3>
+            <input type="text" id="edit-name" placeholder="ФИО ребенка">
+            <input type="date" id="edit-dob">
+            <input type="text" id="edit-parent" placeholder="ФИО родителя">
+            <input type="text" id="edit-phone" placeholder="Телефон">
+            <label style="font-size: 14px; margin-top: 5px;">Группа зачисления:</label>
+            <select id="edit-group"></select>
+            <button onclick="saveChanges()" style="background:#27ae60; margin-top:10px;">Сохранить</button>
+            <button onclick="document.getElementById('modal').style.display='none'" style="background:#6c757d;">Отмена</button>
+        </div>
+    </div>
+
+    <div id="move-modal" class="modal">
+        <div class="modal-content">
+            <h3 id="move-modal-title">Перенос в другую группу</h3>
+            <p id="move-child-info" style="font-size: 14px; color: #2c3e50; margin: 0; font-weight: 600;"></p>
+            
+            <label style="font-size: 13px; color:#7f8c8d;">Выберите целевую группу:</label>
+            <select id="move-target-group"></select>
+
+            <label style="font-size: 13px; color:#7f8c8d;">Срок пребывания в новой группе:</label>
+            <select id="move-period-type" onchange="togglePeriodDates(this.value)">
+                <option value="forever">Постоянный перевод</option>
+                <option value="temporary">На определенный период (Временный)</option>
+            </select>
+
+            <div id="date-range-block" class="date-range-block">
+                <label style="font-size: 12px; color:#555;">Дата начала:</label>
+                <input type="date" id="move-start-date">
+                <label style="font-size: 12px; color:#555;">Дата окончания:</label>
+                <input type="date" id="move-end-date">
+            </div>
+
+            <button id="move-confirm-btn" onclick="executeTransfer()" style="background:#e67e22; margin-top:10px;">Выполнить перенос</button>
+            <button onclick="closeMoveModal()" style="background:#6c757d;">Отмена</button>
+        </div>
+    </div>
+
+    <script>
+        let currentEditing = { oldGroup: null, id: null };
+        let moveContext = { isBulk: false, singleGroup: null, singleId: null }; 
+        let allChildrenData = [];
+        let currentSort = { key: null, dir: 'asc' };
+
+        function displayDate(isoDateStr) {
+            if (!isoDateStr || !isoDateStr.includes('-')) return isoDateStr || '-';
+            const parts = isoDateStr.split('-');
+            return parts.length === 3 ? `${parts[2]}.${parts[1]}.${parts[0]}` : isoDateStr;
+        }
+
+        function loadAllChildren() {
+            let groups = JSON.parse(localStorage.getItem('my_groups')) || ['8', '9', '10'];
+            allChildrenData = [];
+
+            groups.forEach(g => {
+                let list = JSON.parse(localStorage.getItem('ch_' + g)) || [];
+                list.forEach(c => {
+                    let enrollmentGroup = (c.tempTransfer && c.tempTransfer.originalGroup) ? c.tempTransfer.originalGroup : g;
+                    
+                    allChildrenData.push({
+                        id: c.id,
+                        name: c.name,
+                        dob: c.dob || '',
+                        group: g, 
+                        displayGroup: enrollmentGroup, 
+                        parentName: c.parentName || '',
+                        phone: c.phone || '',
+                        active: c.active !== false,
+                        tempTransfer: c.tempTransfer || null
+                    });
+                });
+            });
+
+            if (currentSort.key) applySortLogic();
+            renderTable();
+            updateGroupSelects(groups);
+            updateBulkPanel();
+        }
+
+        function updateGroupSelects(groups) {
+            let editSelect = document.getElementById('edit-group');
+            let moveSelect = document.getElementById('move-target-group');
+            let excelSelect = document.getElementById('excel-group-select');
+            
+            editSelect.innerHTML = '';
+            moveSelect.innerHTML = '<option value="" disabled selected>Выберите группу...</option>';
+            excelSelect.innerHTML = '<option value="all">Все группы реестра</option>';
+            
+            groups.forEach(g => {
+                let html = `<option value="${g}">Группа ${g}</option>`;
+                editSelect.innerHTML += html;
+                moveSelect.innerHTML += html;
+                excelSelect.innerHTML += html;
+            });
+        }
+
+        function renderTable() {
+            let tableBody = document.getElementById('table-body');
+            tableBody.innerHTML = '';
+            document.getElementById('main-checkbox').checked = false;
+
+            allChildrenData.forEach(c => {
+                const statusBadge = c.active 
+                    ? `<span class="status-badge status-active">Обучается</span>` 
+                    : `<span class="status-badge status-archived">Отчислен</span>`;
+                
+                const statusActionText = c.active ? 'Отчислить' : 'Восстановить';
+
+                let tempInfo = '';
+                if (c.tempTransfer) {
+                    tempInfo = `<br><span style="font-size:11px; color:#e67e22; font-weight:600;">⏱ Врем. в гр. ${c.group} до ${displayDate(c.tempTransfer.end)}</span>`;
+                }
+
+                tableBody.innerHTML += `<tr data-id="${c.id}" data-group="${c.group}">
+                    <td class="checkbox-cell"><input type="checkbox" class="child-checkbox" data-id="${c.id}" data-group="${c.group}" onclick="updateBulkPanel()"></td>
+                    <td class="clickable" onclick="openEditModal('${c.group}', '${c.id}')">${c.name}${tempInfo}</td>
+                    <td>${displayDate(c.dob)}</td>
+                    <td>Группа ${c.displayGroup}</td>
+                    <td>${c.parentName || '-'}</td>
+                    <td>${c.phone || '-'}</td>
+                    <td>${statusBadge}</td>
+                    <td>
+                        <select class="action-select" onchange="handleActionChange(this, '${c.group}', '${c.id}', ${c.active})">
+                            <option value="" disabled selected>Выбрать...</option>
+                            <option value="status">${statusActionText}</option>
+                            <option value="move">Перенос группы</option>
+                            <option value="delete" style="color: #c0392b; font-weight: bold;">❌ Удалить</option>
+                        </select>
+                    </td>
+                </tr>`;
+            });
+            filterTable();
+        }
+
+        function handleActionChange(selectElement, group, id, currentStatus) {
+            const action = selectElement.value;
+            if (!action) return;
+
+            if (action === 'status') {
+                toggleStatus(group, id, currentStatus);
+            } else if (action === 'move') {
+                openSingleMoveModal(group, id);
+            } else if (action === 'delete') {
+                deleteChild(group, id);
+            }
+            selectElement.value = "";
+        }
+
+        function togglePeriodDates(value) {
+            const dateBlock = document.getElementById('date-range-block');
+            dateBlock.style.display = (value === 'temporary') ? 'flex' : 'none';
+        }
+
+        function openSingleMoveModal(group, id) {
+            moveContext.isBulk = false;
+            moveContext.singleGroup = group;
+            moveContext.singleId = id;
+
+            let list = JSON.parse(localStorage.getItem('ch_' + group)) || [];
+            let child = list.find(c => c.id == id);
+
+            document.getElementById('move-modal-title').innerText = "Перенос ребенка";
+            document.getElementById('move-child-info').innerText = `${child.name} (Сейчас в физ. базе гр. ${group})`;
+            document.getElementById('move-target-group').value = group;
+            
+            document.getElementById('move-period-type').value = 'forever';
+            document.getElementById('date-range-block').style.display = 'none';
+            document.getElementById('move-start-date').value = '';
+            document.getElementById('move-end-date').value = '';
+
+            document.getElementById('move-modal').style.display = 'flex';
+        }
+
+        function openBulkMoveModal() {
+            moveContext.isBulk = true;
+            const count = document.querySelectorAll('.child-checkbox:checked').length;
+
+            document.getElementById('move-modal-title').innerText = "Массовый перенос";
+            document.getElementById('move-child-info').innerText = `Выбрано детей для перевода: ${count} чел.`;
+            document.getElementById('move-target-group').value = "";
+
+            document.getElementById('move-period-type').value = 'forever';
+            document.getElementById('date-range-block').style.display = 'none';
+            document.getElementById('move-start-date').value = '';
+            document.getElementById('move-end-date').value = '';
+
+            document.getElementById('move-modal').style.display = 'flex';
+        }
+
+        function closeMoveModal() {
+            document.getElementById('move-modal').style.display = 'none';
+        }
+
+        function executeTransfer() {
+            const targetGroup = document.getElementById('move-target-group').value;
+            if (!targetGroup) {
+                alert("Пожалуйста, выберите целевую группу!");
+                return;
+            }
+
+            const periodType = document.getElementById('move-period-type').value;
+            let tempTransferObj = null;
+
+            if (periodType === 'temporary') {
+                const start = document.getElementById('move-start-date').value;
+                const end = document.getElementById('move-end-date').value;
+                if (!start || !end) {
+                    alert("Укажите даты начала и окончания временного периода!");
+                    return;
+                }
+                tempTransferObj = { start: start, end: end, originalGroup: "" };
+            }
+
+            if (!moveContext.isBulk) {
+                const oldGroup = moveContext.singleGroup;
+                const id = moveContext.singleId;
+
+                if (oldGroup === targetGroup) {
+                    alert("Ребенок уже физически находится в этой группе!");
+                    return;
+                }
+
+                moveChildLogic(id, oldGroup, targetGroup, tempTransferObj);
+            } else {
+                const selected = getSelectedChildren();
+                let movedCount = 0;
+
+                selected.forEach(item => {
+                    if (item.group !== targetGroup) {
+                        moveChildLogic(item.id, item.group, targetGroup, tempTransferObj);
+                        movedCount++;
+                    }
+                });
+                alert(`Массовый перевод успешно завершен! Переведено детей: ${movedCount} чел.`);
+            }
+
+            closeMoveModal();
+            loadAllChildren();
+        }
+
+        function moveChildLogic(childId, fromGroup, toGroup, tempTransferObj) {
+            let oldList = JSON.parse(localStorage.getItem('ch_' + fromGroup)) || [];
+            let childIndex = oldList.findIndex(c => c.id == childId);
+
+            if (childIndex !== -1) {
+                let child = oldList[childIndex];
+                
+                if (tempTransferObj) {
+                    let original = (child.tempTransfer && child.tempTransfer.originalGroup) ? child.tempTransfer.originalGroup : fromGroup;
+                    child.tempTransfer = {
+                        start: tempTransferObj.start,
+                        end: tempTransferObj.end,
+                        originalGroup: original
+                    };
+                } else {
+                    delete child.tempTransfer; 
+                }
+
+                oldList.splice(childIndex, 1);
+                localStorage.setItem('ch_' + fromGroup, JSON.stringify(oldList));
+
+                let newList = JSON.parse(localStorage.getItem('ch_' + toGroup)) || [];
+                newList.push(child);
+                localStorage.setItem('ch_' + toGroup, JSON.stringify(newList));
+            }
+        }
+
+        function toggleStatus(group, id, currentStatus) {
+            let list = JSON.parse(localStorage.getItem('ch_' + group));
+            let child = list.find(c => c.id == id);
+            child.active = !currentStatus;
+            localStorage.setItem('ch_' + group, JSON.stringify(list));
+            loadAllChildren();
+        }
+
+        function deleteChild(group, id) {
+            let list = JSON.parse(localStorage.getItem('ch_' + group));
+            let child = list.find(c => c.id == id);
+            if (confirm(`Вы уверены, что хотите БЕЗВОЗВРАТНО удалить ребенка: ${child.name}?`)) {
+                list = list.filter(c => c.id != id);
+                localStorage.setItem('ch_' + group, JSON.stringify(list));
+                loadAllChildren();
+            }
+        }
+
+        function toggleAllCheckboxes(mainCheckbox) {
+            const rows = document.querySelectorAll('#table-body tr');
+            rows.forEach(row => {
+                if (row.style.display !== 'none') {
+                    const cb = row.querySelector('.child-checkbox');
+                    if (cb) cb.checked = mainCheckbox.checked;
+                }
+            });
+            updateBulkPanel();
+        }
+
+        function updateBulkPanel() {
+            const checkedBoxes = document.querySelectorAll('.child-checkbox:checked');
+            const bulkPanel = document.getElementById('bulk-panel');
+            const bulkCount = document.getElementById('bulk-count');
+            
+            if (checkedBoxes.length > 0) {
+                bulkPanel.style.display = 'flex';
+                bulkCount.innerText = checkedBoxes.length;
+            } else {
+                bulkPanel.style.display = 'none';
+            }
+        }
+
+        function getSelectedChildren() {
+            const checkedBoxes = document.querySelectorAll('.child-checkbox:checked');
+            let selected = [];
+            checkedBoxes.forEach(cb => {
+                selected.push({ id: cb.getAttribute('data-id'), group: cb.getAttribute('data-group') });
+            });
+            return selected;
+        }
+
+        function bulkToggleStatus(statusToSet) {
+            const selected = getSelectedChildren();
+            const text = statusToSet ? "восстановить" : "отчислить";
+            if (confirm(`Вы хотите ${text} выбранных детей (${selected.length} чел.)?`)) {
+                let updates = {};
+                selected.forEach(item => {
+                    if (!updates[item.group]) updates[item.group] = [];
+                    updates[item.group].push(item.id);
+                });
+                for (let group in updates) {
+                    let list = JSON.parse(localStorage.getItem('ch_' + group)) || [];
+                    list.forEach(child => {
+                        if (updates[group].includes(child.id)) child.active = statusToSet;
+                    });
+                    localStorage.setItem('ch_' + group, JSON.stringify(list));
+                }
+                loadAllChildren();
+            }
+        }
+
+        function bulkDelete() {
+            const selected = getSelectedChildren();
+            if (confirm(`ВНИМАНИЕ! БЕЗВОЗВРАТНО удалить выбранных детей (${selected.length} чел.)?`)) {
+                let updates = {};
+                selected.forEach(item => {
+                    if (!updates[item.group]) updates[item.group] = [];
+                    updates[item.group].push(item.id);
+                });
+                for (let group in updates) {
+                    let list = JSON.parse(localStorage.getItem('ch_' + group)) || [];
+                    list = list.filter(child => !updates[group].includes(child.id));
+                    localStorage.setItem('ch_' + group, JSON.stringify(list));
+                }
+                loadAllChildren();
+            }
+        }
+
+        function openEditModal(group, id) {
+            currentEditing = { oldGroup: group, id: id };
+            let list = JSON.parse(localStorage.getItem('ch_' + group));
+            let child = list.find(c => c.id == id);
+            
+            document.getElementById('edit-name').value = child.name;
+            document.getElementById('edit-dob').value = child.dob || '';
+            document.getElementById('edit-parent').value = child.parentName || '';
+            document.getElementById('edit-phone').value = child.phone || '';
+            
+            let currentEnrollmentGroup = (child.tempTransfer && child.tempTransfer.originalGroup) ? child.tempTransfer.originalGroup : group;
+            document.getElementById('edit-group').value = currentEnrollmentGroup;
+            
+            document.getElementById('modal').style.display = 'flex';
+        }
+
+        function saveChanges() {
+            const newGroup = document.getElementById('edit-group').value;
+            const oldGroup = currentEditing.oldGroup;
+            const id = currentEditing.id;
+
+            let oldList = JSON.parse(localStorage.getItem('ch_' + oldGroup));
+            let childIndex = oldList.findIndex(c => c.id == id);
+            let child = oldList[childIndex];
+
+            child.name = document.getElementById('edit-name').value.trim();
+            child.dob = document.getElementById('edit-dob').value;
+            child.parentName = document.getElementById('edit-parent').value.trim();
+            child.phone = document.getElementById('edit-phone').value.trim();
+
+            let currentEnrollment = (child.tempTransfer && child.tempTransfer.originalGroup) ? child.tempTransfer.originalGroup : oldGroup;
+            
+            if (currentEnrollment !== newGroup) {
+                if (child.tempTransfer) {
+                    child.tempTransfer.originalGroup = newGroup;
+                    localStorage.setItem('ch_' + oldGroup, JSON.stringify(oldList));
+                } else {
+                    oldList.splice(childIndex, 1);
+                    localStorage.setItem('ch_' + oldGroup, JSON.stringify(oldList));
+                    let newList = JSON.parse(localStorage.getItem('ch_' + newGroup)) || [];
+                    newList.push(child);
+                    localStorage.setItem('ch_' + newGroup, JSON.stringify(newList));
+                }
+            } else {
+                localStorage.setItem('ch_' + oldGroup, JSON.stringify(oldList));
+            }
+
+            document.getElementById('modal').style.display = 'none';
+            loadAllChildren();
+        }
+
+        function filterTable() {
+            const query = document.getElementById('search-input').value.toLowerCase();
+            const rows = document.querySelectorAll('#table-body tr');
+            rows.forEach(row => {
+                const matches = row.textContent.toLowerCase().includes(query);
+                row.style.display = matches ? '' : 'none';
+                if(!matches) {
+                    const cb = row.querySelector('.child-checkbox');
+                    if(cb) cb.checked = false;
+                }
+            });
+            updateBulkPanel();
+        }
+
+        function sortTable(key) {
+            if (currentSort.key === key) {
+                currentSort.dir = currentSort.dir === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSort.key = key;
+                currentSort.dir = 'asc';
+            }
+            document.querySelectorAll('th span').forEach(span => span.textContent = '');
+            const indicator = document.getElementById('sort-' + key);
+            if (indicator) indicator.textContent = currentSort.dir === 'asc' ? ' ▲' : ' ▼';
+            applySortLogic();
+            renderTable();
+        }
+
+        function applySortLogic() {
+            const key = currentSort.key;
+            const dir = currentSort.dir === 'asc' ? 1 : -1;
+            allChildrenData.sort((a, b) => {
+                let valA = a[key];
+                let valB = b[key];
+                if (key === 'group' || key === 'displayGroup') return (parseInt(valA) - parseInt(valB)) * dir;
+                valA = String(valA).toLowerCase();
+                valB = String(valB).toLowerCase();
+                if (valA < valB) return -1 * dir;
+                if (valA > valB) return 1 * dir;
+                return 0;
+            });
+        }
+
+        function formatExcelDate(dateVal) {
+            if (!dateVal) return '';
+            if (typeof dateVal === 'string' && dateVal.includes('-') && dateVal.length === 10) return dateVal;
+            let d = new Date(dateVal);
+            if (typeof dateVal === 'number' || isNaN(d.getTime())) {
+                if (typeof dateVal === 'number') d = new Date((dateVal - 25569) * 86400 * 1000);
+                else {
+                    let parts = String(dateVal).split('.');
+                    if (parts.length === 3) return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+                    return String(dateVal);
+                }
+            }
+            let month = '' + (d.getMonth() + 1), day = '' + d.getDate(), year = d.getFullYear();
+            return [year, month.padStart(2,'0'), day.padStart(2,'0')].join('-');
+        }
+
+        function importAllData(input) {
+            const file = input.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, {type: 'array', cellDates: true});
+                const rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], {header: 1});
+                let globalGroups = JSON.parse(localStorage.getItem('my_groups')) || [];
+                
+                rows.slice(1).forEach(row => {
+                    const [id_num, childName, dob, group, parentName, phone] = row;
+                    if (!group || !childName) return;
+                    const groupStr = String(group).trim();
+                    if (!globalGroups.includes(groupStr)) globalGroups.push(groupStr);
+
+                    let list = JSON.parse(localStorage.getItem('ch_' + groupStr)) || [];
+                    if (!list.find(c => c.name.toLowerCase() === String(childName).trim().toLowerCase())) {
+                        list.push({
+                            id: Date.now().toString() + Math.random(), 
+                            name: String(childName).trim(), 
+                            dob: formatExcelDate(dob), 
+                            parentName: parentName ? String(parentName).trim() : '', 
+                            phone: phone ? String(phone).trim() : '', 
+                            active: true
+                        });
+                        localStorage.setItem('ch_' + groupStr, JSON.stringify(list));
+                    }
+                });
+                localStorage.setItem('my_groups', JSON.stringify(globalGroups));
+                alert('Импорт завершен!');
+                loadAllChildren();
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // ОТКРЫТЬ ОКНО НАСТРОЕК ЭКСПОРТА
+        function openExcelModal() {
+            document.getElementById('excel-modal').style.display = 'flex';
+        }
+
+        // ВЫПОЛНЕНИЕ УМНОЙ ВЫГРУЗКИ EXCEL НА ОСНОВЕ ПАРАМЕТРОВ
+        function executeExcelDownload() {
+            const targetGroupFilter = document.getElementById('excel-group-select').value; // 'all' или конкретный номер
+            const groupLogic = document.getElementById('excel-logic-select').value; // 'enrollment' или 'actual'
+            
+            const incDob = document.getElementById('excel-col-dob').checked;
+            const incParent = document.getElementById('excel-col-parent').checked;
+            const incPhone = document.getElementById('excel-col-phone').checked;
+
+            // Формируем шапку динамически
+            let headerRow = ["№", "ФИО ребенка"];
+            if (incDob) headerRow.push("Дата рождения");
+            headerRow.push(groupLogic === 'enrollment' ? "Группа зачисления" : "Фактическая группа");
+            if (incParent) headerRow.push("ФИО родителя");
+            if (incPhone) headerRow.push("Телефон");
+            headerRow.push("Статус");
+
+            let excelData = [headerRow];
+            let counter = 1;
+            let exportList = [];
+
+            let groups = JSON.parse(localStorage.getItem('my_groups')) || ['8', '9', '10'];
+
+            groups.forEach(g => {
+                let list = JSON.parse(localStorage.getItem('ch_' + g)) || [];
+                list.forEach(c => {
+                    // Группа зачисления (родная)
+                    let enrollmentGroup = (c.tempTransfer && c.tempTransfer.originalGroup) ? c.tempTransfer.originalGroup : g;
+                    // Фактическая группа (где запись лежит сейчас физически)
+                    let actualGroup = g;
+
+                    // Определяем, какую группу сопоставлять в фильтре на основе выбранной логики
+                    let checkingGroup = (groupLogic === 'enrollment') ? enrollmentGroup : actualGroup;
+
+                    // Фильтруем: если выбрана конкретная группа, пропускаем несовпадающие
+                    if (targetGroupFilter !== 'all' && targetGroupFilter !== checkingGroup) {
+                        return;
+                    }
+
+                    exportList.push({
+                        name: c.name,
+                        dob: c.dob,
+                        groupToShow: checkingGroup, // Зависит от выбранной логики
+                        parentName: c.parentName || '',
+                        phone: c.phone || '',
+                        statusText: c.active !== false ? 'Обучается' : 'Отчислен'
+                    });
+                });
+            });
+
+            // Сортировка списка по группе, затем по алфавиту ФИО детей
+            exportList.sort((a, b) => {
+                if (parseInt(a.groupToShow) !== parseInt(b.groupToShow)) {
+                    return parseInt(a.groupToShow) - parseInt(b.groupToShow);
+                }
+                return a.name.localeCompare(b.name);
+            });
+
+            // Заполняем строки данными на основе выбранных колонок
+            exportList.forEach(c => {
+                let row = [counter++, c.name];
+                if (incDob) row.push(displayDate(c.dob));
+                row.push("Группа " + c.groupToShow);
+                if (incParent) row.push(c.parentName);
+                if (incPhone) row.push(c.phone);
+                row.push(c.statusText);
+                excelData.push(row);
+            });
+
+            // Создаем файл и скачиваем
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.aoa_to_sheet(excelData);
+            XLSX.utils.book_append_sheet(wb, ws, "Реестр детей");
+            
+            // Название файла зависит от фильтра
+            let fileName = targetGroupFilter === 'all' ? "Реестр_всех_детей" : `Реестр_Группа_${targetGroupFilter}`;
+            fileName += groupLogic === 'enrollment' ? "_по_зачислению" : "_фактический";
+            
+            XLSX.writeFile(wb, `${fileName}.xlsx`);
+            document.getElementById('excel-modal').style.display = 'none';
+        }
+
+        loadAllChildren();
+    </script>
+</body>
+</html>

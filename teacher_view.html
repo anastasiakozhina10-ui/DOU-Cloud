@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Панель Воспитателя</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #f4f7f6; padding: 20px; }
+        .header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background: white; padding: 15px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.03); }
+        .group-selector { padding: 8px 12px; font-size: 16px; border-radius: 6px; border: 2px solid #2ecc71; font-weight: bold; background: white; }
+        .group-selector:disabled { background: #f5f5f5; border-color: #bdc3c7; color: #7f8c8d; cursor: not-allowed; }
+        .search-input { width: 100%; padding: 12px 15px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 15px; box-sizing: border-box; outline: none; margin-bottom: 15px; }
+        .search-input:focus { border-color: #2ecc71; }
+        table { width: 100%; border-collapse: collapse; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        th, td { padding: 15px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #2ecc71; color: white; }
+        .phone-link { color: #27ae60; text-decoration: none; font-weight: bold; }
+        .no-data { text-align: center; color: #7f8c8d; padding: 30px; font-style: italic; }
+        button { padding: 10px 15px; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; color: white; background: #6c757d; }
+        .btn-excel { background: #27ae60; margin-left: 10px; }
+    </style>
+</head>
+<body>
+
+    <div class="header-bar">
+        <div>
+            <button onclick="window.location.href='index.html'">← В меню</button>
+        </div>
+        <h2>Журнал группы: 
+            <select id="teacher-group-select" class="group-selector" onchange="loadTeacherGroup()"></select>
+            <button class="btn-excel" onclick="exportToExcel()">Скачать (Excel)</button>
+        </h2>
+        <span id="role-indicator" style="color: #7f8c8d; font-weight: 600;">Режим: Воспитатель</span>
+    </div>
+
+    <input type="text" id="search-input" class="search-input" onkeyup="filterTable()" placeholder="Быстрый поиск по фамилии ребенка или родителя...">
+
+    <table>
+        <thead>
+            <tr>
+                <th>ФИО ребенка</th>
+                <th>Дата рождения</th>
+                <th>ФИО родителя</th>
+                <th>Контактный телефон</th>
+            </tr>
+        </thead>
+        <tbody id="table-body"></tbody>
+    </table>
+
+    <script>
+        const currentUser = JSON.parse(localStorage.getItem('currentUser'));
+        
+        function initTeacherPage() {
+            if (!currentUser) { window.location.href = 'login.html'; return; }
+            let select = document.getElementById('teacher-group-select');
+            let roleIndicator = document.getElementById('role-indicator');
+            select.innerHTML = '';
+
+            if (currentUser.group === 'admin') {
+                let groups = JSON.parse(localStorage.getItem('my_groups')) || ['8', '9', '10'];
+                groups.forEach(g => select.innerHTML += `<option value="${g}">Группа ${g}</option>`);
+                roleIndicator.innerText = "Режим: Администратор";
+            } else {
+                select.innerHTML = `<option value="${currentUser.group}">Группа ${currentUser.group}</option>`;
+                select.disabled = true; 
+                roleIndicator.innerText = `Режим: Воспитатель группы ${currentUser.group}`;
+            }
+            loadTeacherGroup();
+        }
+
+        function displayDate(isoDateStr) {
+            if (!isoDateStr || !isoDateStr.includes('-')) return isoDateStr || '-';
+            const parts = isoDateStr.split('-');
+            return `${parts[2]}.${parts[1]}.${parts[0]}`;
+        }
+
+        function loadTeacherGroup() {
+            const selectedGroup = document.getElementById('teacher-group-select').value;
+            let tableBody = document.getElementById('table-body');
+            tableBody.innerHTML = '';
+            let list = JSON.parse(localStorage.getItem('ch_' + selectedGroup)) || [];
+            let activeChildren = list.filter(c => c.active !== false);
+
+            if (activeChildren.length === 0) {
+                tableBody.innerHTML = `<tr><td colspan="4" class="no-data">В группе ${selectedGroup} нет детей.</td></tr>`;
+                return;
+            }
+
+            activeChildren.forEach(c => {
+                tableBody.innerHTML += `<tr>
+                    <td><strong>${c.name}</strong></td>
+                    <td>${displayDate(c.dob)}</td>
+                    <td>${c.parentName || '-'}</td>
+                    <td>${c.phone || '-'}</td>
+                </tr>`;
+            });
+        }
+
+        // Функция экспорта в Excel
+        function exportToExcel() {
+            const selectedGroup = document.getElementById('teacher-group-select').value;
+            let list = JSON.parse(localStorage.getItem('ch_' + selectedGroup)) || [];
+            let data = list.filter(c => c.active !== false).map(c => ({
+                "ФИО ребенка": c.name,
+                "Дата рождения": displayDate(c.dob),
+                "ФИО родителя": c.parentName || '-',
+                "Телефон": c.phone || '-'
+            }));
+
+            const ws = XLSX.utils.json_to_sheet(data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Группа " + selectedGroup);
+            XLSX.writeFile(wb, `Журнал_Группа_${selectedGroup}.xlsx`);
+        }
+
+        function filterTable() {
+            const query = document.getElementById('search-input').value.toLowerCase();
+            const rows = document.querySelectorAll('#table-body tr');
+            rows.forEach(row => {
+                row.style.display = row.textContent.toLowerCase().includes(query) ? '' : 'none';
+            });
+        }
+
+        initTeacherPage();
+    </script>
+</body>
+</html>

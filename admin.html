@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Табель посещаемости</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #f4f7f6; margin: 0; padding: 20px; }
+        .sticky-header { position: sticky; top: 0; background: #f4f7f6; padding: 15px; z-index: 1000; border-bottom: 2px solid #ddd; box-shadow: 0 2px 5px rgba(0,0,0,0.05); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .card { background: white; padding: 15px; margin: 10px 0; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        button { border: none; padding: 10px 15px; border-radius: 8px; cursor: pointer; transition: 0.3s; font-weight: 600; }
+        button:hover { filter: brightness(1.1); }
+        .active { background: #4a90e2 !important; color: white !important; }
+        .btn-del { background: #ff4d4d; color: white; }
+        select { padding: 8px; border-radius: 6px; border: 1px solid #ddd; }
+    </style>
+</head>
+<body>
+
+    <div class="sticky-header">
+        <button onclick="window.location.href='index.html'">← Меню</button>
+        <select id="group-select" onchange="load()"></select>
+        <input type="date" id="date-picker" onchange="load()">
+        <input type="text" id="new-name" placeholder="ФИО ребенка">
+        <button onclick="addManual()">+</button>
+        <input type="file" id="file-input" accept=".csv, .xlsx">
+        <button onclick="processImport()" style="background:#4a90e2; color:white;">Загрузить файл</button>
+        <button onclick="exportToExcel()" style="background:#27ae60; color:white;">Скачать Excel</button>
+        <button onclick="window.location.href='archive.html'" style="background:#6c757d; color:white;">Архив</button>
+    </div>
+
+    <div id="children-list" style="margin-top:20px;"></div>
+
+    <script>
+        // Проверка авторизации
+        const user = JSON.parse(localStorage.getItem('currentUser'));
+        if (!user) window.location.href = 'login.html'; 
+
+        const datePicker = document.getElementById('date-picker');
+        datePicker.valueAsDate = new Date();
+
+        // Инициализация групп
+        function initGroups() {
+            let groups = JSON.parse(localStorage.getItem('my_groups')) || ['8', '9', '10'];
+            let select = document.getElementById('group-select');
+            
+            // Если админ - все группы, если учитель - только его группа
+            if (user.group === 'admin') {
+                select.innerHTML = groups.map(g => `<option value="${g}">Группа ${g}</option>`).join('');
+            } else {
+                select.innerHTML = `<option value="${user.group}">Группа ${user.group}</option>`;
+                select.disabled = true;
+            }
+            load(); // Автоматическая загрузка данных после инициализации
+        }
+
+        function getGroup() { return document.getElementById('group-select').value; }
+
+        function addManual() {
+            const group = getGroup();
+            const name = document.getElementById('new-name').value.trim();
+            if(!name) return alert("Введите ФИО!");
+            let list = JSON.parse(localStorage.getItem('ch_' + group)) || [];
+            list.push({id: Date.now().toString(), name: name, active: true});
+            localStorage.setItem('ch_' + group, JSON.stringify(list));
+            document.getElementById('new-name').value = '';
+            load();
+        }
+
+        // Импорт списка детей из Excel
+        function processImport() {
+            const file = document.getElementById('file-input').files[0];
+            if (!file) return alert("Выберите файл!");
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, {type: 'array'});
+                const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                const json = XLSX.utils.sheet_to_json(sheet, {header: 1});
+                const group = getGroup();
+                let list = JSON.parse(localStorage.getItem('ch_' + group)) || [];
+                json.forEach(row => {
+                    if (row[0]) list.push({id: Date.now().toString() + Math.random(), name: row[0], active: true});
+                });
+                localStorage.setItem('ch_' + group, JSON.stringify(list));
+                load();
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function exportToExcel() {
+            const group = getGroup();
+            const list = JSON.parse(localStorage.getItem('ch_' + group)) || [];
+            const at = JSON.parse(localStorage.getItem('at_' + group)) || {};
+            const dates = Object.keys(at).sort();
+            let data = [["ФИО ребенка", ...dates]];
+            list.filter(c => c.active !== false).forEach(c => {
+                let row = [c.name];
+                dates.forEach(d => row.push(at[d] ? (at[d][c.id] || "") : ""));
+                data.push(row);
+            });
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.aoa_to_sheet(data);
+            XLSX.utils.book_append_sheet(wb, ws, "Табель");
+            XLSX.writeFile(wb, "Табель_Группа_" + group + ".xlsx");
+        }
+
+        function load() {
+            const group = getGroup();
+            let list = JSON.parse(localStorage.getItem('ch_' + group)) || [];
+            let at = JSON.parse(localStorage.getItem('at_' + group)) || {};
+            let d = datePicker.value;
+            list.sort((a, b) => a.name.localeCompare(b.name));
+            
+            document.getElementById('children-list').innerHTML = list.filter(c => c.active !== false).map(c => {
+                let s = (at[d] && at[d][c.id]) || '';
+                return `<div class="card">
+                    <span>${c.name}</span>
+                    <div>
+                        <button class="${s=='Я'?'active':''}" onclick="setStatus('${c.id}','Я')">Я</button>
+                        <button class="${s=='Н'?'active':''}" onclick="setStatus('${c.id}','Н')">Н</button>
+                        <button class="${s=='Б'?'active':''}" onclick="setStatus('${c.id}','Б')">Б</button>
+                        <button class="btn-del" onclick="toArchive('${c.id}')">✕</button>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        function setStatus(id, s) {
+            const group = getGroup();
+            let at = JSON.parse(localStorage.getItem('at_' + group)) || {};
+            let d = datePicker.value;
+            if(!at[d]) at[d] = {};
+            at[d][id] = (at[d][id] === s) ? '' : s;
+            localStorage.setItem('at_' + group, JSON.stringify(at));
+            load();
+        }
+
+        function toArchive(id) {
+            if(!confirm("Удалить ребенка из списка?")) return;
+            const group = getGroup();
+            let l = JSON.parse(localStorage.getItem('ch_' + group));
+            l.find(c => c.id == id).active = false;
+            localStorage.setItem('ch_' + group, JSON.stringify(l));
+            load();
+        }
+
+        initGroups();
+    </script>
+</body>
+</html>
